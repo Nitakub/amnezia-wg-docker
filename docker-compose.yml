@@ -1,0 +1,49 @@
+# AmneziaWG 2.0 + веб-интерфейс: https://github.com/N-Rn00/awg-2.0-with-ui
+#
+# Как запустить:
+#   1. cp .env.example .env  (шаблон в git; рабочий .env только локально, см. .gitignore)
+#      Заполните WG_HOST, при необходимости смените PASSWORD_HASH
+#   2. docker compose build    (первый раз тянет репозиторий и собирает образ)
+#   3. docker compose up -d
+#   4. Веб-UI: см. ниже (по умолчанию только localhost + SSH-туннель).
+#
+# Переменные портов и паролей берутся из файла .env (см. комментарии в .env.example).
+
+services:
+  awg-with-ui:
+    # Сборка из GitHub: в образе AWG 2.0 (S3/S4, I1–I5) + UI на базе awg-easy.
+    build:
+      context: https://github.com/N-Rn00/awg-2.0-with-ui.git#main
+      dockerfile: Dockerfile
+    image: awg-with-ui:local
+    container_name: awg-with-ui
+    restart: unless-stopped
+
+    # NET_ADMIN + SYS_MODULE — нужны для поднятия туннеля и маршрутизации.
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+    # TUN — виртуальный сетевой интерфейс VPN (без него контейнер не поднимет awg0).
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    # Маршрутизация IPv4 между LAN и VPN-клиентами.
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+
+    # Все настройки из списка ниже — в файле .env (пример и расшифровка: .env.example).
+    env_file:
+      - .env
+
+    # Проброс на хост: VPN (UDP — слушает на всех интерфейсах для клиентов из интернета).
+    # Веб-UI (TCP) — только 127.0.0.1: снаружи не открыт; доступ через SSH -L (см. quickstart.md).
+    ports:
+      - "${WG_PORT:-51820}:${WG_PORT:-51820}/udp"
+      - "127.0.0.1:${PORT:-51821}:${PORT:-51821}/tcp"
+
+    # Конфиги и ключи: ./awg-data на хосте → /etc/amnezia/amneziawg в контейнере.
+    # Удалять папку не нужно при обновлении образа — там же лежат клиенты и awg0.conf.
+    volumes:
+      - ./awg-data:/etc/amnezia/amneziawg
